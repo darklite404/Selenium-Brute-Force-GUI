@@ -251,6 +251,12 @@ tk.Button(frame, text="Clear Settings", command=clear_settings).grid(row=6, colu
 output_text = tk.Text(root, height=15, width=100)
 output_text.pack(padx=10, pady=10)
 
+# Developer credit
+import webbrowser
+credit = tk.Label(root, text="Developed by darklite404", fg="blue", cursor="hand2")
+credit.pack(side=tk.LEFT, padx=10, anchor="sw")
+credit.bind("<Button-1>", lambda e: webbrowser.open_new("https://github.com/darklite404/Selenium-Brute-Force-GUI"))
+
 # Load saved settings
 load_settings()
 
