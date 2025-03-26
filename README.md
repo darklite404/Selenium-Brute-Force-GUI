@@ -5,6 +5,7 @@ Add more features than CLi version
 - auto search username and password input fields and send button
 - auto loging
 - multi threads
-- start/stop/pause option 
+- start/stop/pause option
+- using static or dictionary on username/password
 
-![image](https://github.com/user-attachments/assets/21d257b0-f6d8-4f96-92fa-93e5c56248cb)
+![image](https://github.com/user-attachments/assets/dd24befd-bc3b-4c70-818d-0bb20db3b76f)
