@@ -24,7 +24,7 @@ CONFIG_FILE = "settings.json"
 
 # GUI setup
 root = tk.Tk()
-root.title("Brute Force GUI (Auto Detect Login Fields)")
+root.title("Brute Force GUI (Developed by darklite404)")
 
 frame = tk.Frame(root)
 frame.pack(padx=10, pady=10)
